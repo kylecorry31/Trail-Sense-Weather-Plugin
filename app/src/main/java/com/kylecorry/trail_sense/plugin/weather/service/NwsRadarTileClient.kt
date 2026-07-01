@@ -1,24 +1,24 @@
 package com.kylecorry.trail_sense.plugin.weather.service
 
 import com.kylecorry.andromeda.net.HttpClient
+import com.kylecorry.sol.science.geography.projections.MercatorProjection
 import com.kylecorry.trail_sense.plugin.weather.models.MapTileLayerRequest
 import com.kylecorry.trail_sense.plugin.weather.models.getTile
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.time.Duration
-import kotlin.math.PI
-import kotlin.math.ln
-import kotlin.math.tan
 
 object NwsRadarTileClient {
     private const val TILE_SIZE = 256
     private const val CACHE_DURATION_MILLIS = 240_000L
     private const val MAX_CACHE_SIZE = 512
+    private const val WEB_MERCATOR_RADIUS_METERS = 6_378_137f
     private const val BASE_URL =
         "https://nowcoast.noaa.gov/geoserver/observations/weather_radar/ows"
     private const val LAYER = "base_reflectivity_mosaic"
 
     private val client = HttpClient()
+    private val projection = MercatorProjection(WEB_MERCATOR_RADIUS_METERS)
     private val cacheLock = Any()
     private val cache = object : LinkedHashMap<String, CachedTile>(MAX_CACHE_SIZE, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedTile>?): Boolean {
@@ -95,21 +95,14 @@ object NwsRadarTileClient {
     }
 
     private fun com.kylecorry.trail_sense.plugin.weather.models.TileBounds.toWebMercator(): WebMercatorBounds {
+        val southwest = projection.toPixels(south, west)
+        val northeast = projection.toPixels(north, east)
         return WebMercatorBounds(
-            minX = longitudeToWebMercator(west),
-            minY = latitudeToWebMercator(south),
-            maxX = longitudeToWebMercator(east),
-            maxY = latitudeToWebMercator(north)
+            minX = southwest.x.toDouble(),
+            minY = southwest.y.toDouble(),
+            maxX = northeast.x.toDouble(),
+            maxY = northeast.y.toDouble()
         )
-    }
-
-    private fun longitudeToWebMercator(longitude: Double): Double {
-        return longitude * 20037508.34 / 180.0
-    }
-
-    private fun latitudeToWebMercator(latitude: Double): Double {
-        val clamped = latitude.coerceIn(-85.05112878, 85.05112878)
-        return ln(tan((90.0 + clamped) * PI / 360.0)) / (PI / 180.0) * 20037508.34 / 180.0
     }
 
     private data class CachedTile(
