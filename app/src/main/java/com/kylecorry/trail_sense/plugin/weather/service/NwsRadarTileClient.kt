@@ -1,5 +1,7 @@
 package com.kylecorry.trail_sense.plugin.weather.service
 
+import android.content.Context
+import com.kylecorry.andromeda.files.CacheFileSystem
 import com.kylecorry.andromeda.net.HttpClient
 import com.kylecorry.trail_sense.plugin.weather.models.MapTileLayerRequest
 import com.kylecorry.trail_sense.plugin.weather.models.getTile
@@ -7,35 +9,33 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 
-object NwsRadarTileClient {
-    private const val TILE_SIZE = 256
-    private const val CACHE_DURATION_MILLIS = 240_000L
-    private const val MAX_CACHE_SIZE = 512
-    private const val BASE_URL =
-        "https://nowcoast.noaa.gov/geoserver/observations/weather_radar/ows"
-    private const val LAYER = "base_reflectivity_mosaic"
+class NwsRadarTileClient(context: Context) {
 
     private val client = HttpClient()
-    private val cacheLock = Any()
-    private val cache = object : LinkedHashMap<String, CachedTile>(MAX_CACHE_SIZE, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedTile>?): Boolean {
-            return size > MAX_CACHE_SIZE
-        }
-    }
+    private val cache = DiskLRUCache<String, ByteArray>(
+        baseFolderPath = CacheFileSystem(context.applicationContext)
+            .getDirectory(CACHE_DIR)
+            .path,
+        size = MAX_CACHE_SIZE,
+        duration = Duration.ofMillis(CACHE_DURATION_MILLIS),
+        getFilename = { "$it.png" },
+        serialize = { it },
+        deserialize = { it }
+    )
 
     suspend fun getTile(request: MapTileLayerRequest): ByteArray? {
-        val key = "${request.z}/${request.x}/${request.y}"
-        val now = System.currentTimeMillis()
-        synchronized(cacheLock) {
-            cache[key]?.takeIf { now < it.expiresAt }?.let { return it.bytes }
+        val key = getCacheKey(request)
+        val url = buildUrl(request)
+        val bytes = cache.getOrPut(key) {
+            fetch(url) ?: ByteArray(0)
         }
 
-        val url = buildUrl(request)
-        val bytes = fetch(url) ?: return null
-        synchronized(cacheLock) {
-            cache[key] = CachedTile(bytes, now + CACHE_DURATION_MILLIS)
+        return if (bytes.isEmpty()) {
+            cache.invalidate(key)
+            null
+        } else {
+            bytes
         }
-        return bytes
     }
 
     private fun buildUrl(request: MapTileLayerRequest): String {
@@ -60,16 +60,12 @@ object NwsRadarTileClient {
     }
 
     private suspend fun fetch(url: String): ByteArray? {
-        val response = try {
-            client.send(
-                url,
-                headers = mapOf("User-Agent" to "Trail Sense Weather Plugin"),
-                readTimeout = Duration.ofSeconds(10),
-                connectTimeout = Duration.ofSeconds(10)
-            )
-        } catch (_: Exception) {
-            return null
-        }
+        val response = client.send(
+            url,
+            headers = mapOf("User-Agent" to "Trail Sense Weather Plugin"),
+            readTimeout = Duration.ofSeconds(10),
+            connectTimeout = Duration.ofSeconds(10)
+        )
 
         if (!response.isSuccessful()) {
             return null
@@ -91,8 +87,17 @@ object NwsRadarTileClient {
         return URLEncoder.encode(this, StandardCharsets.UTF_8.name())
     }
 
-    private data class CachedTile(
-        val bytes: ByteArray,
-        val expiresAt: Long
-    )
+    private fun getCacheKey(request: MapTileLayerRequest): String {
+        return "${request.z}/${request.x}/${request.y}"
+    }
+
+    private companion object {
+        const val TILE_SIZE = 256
+        const val CACHE_DURATION_MILLIS = 240_000L
+        const val MAX_CACHE_SIZE = 512
+        const val CACHE_DIR = "nws-radar"
+        const val BASE_URL =
+            "https://nowcoast.noaa.gov/geoserver/observations/weather_radar/ows"
+        const val LAYER = "base_reflectivity_mosaic"
+    }
 }

@@ -11,6 +11,8 @@ import com.kylecorry.trail_sense.plugin.weather.models.RegistrationResponse
 
 class WeatherPluginService : InterprocessCommunicationService() {
 
+    private val nwsRadarTileClient by lazy { NwsRadarTileClient(this) }
+
     override val router: InterprocessCommunicationRouter
         get() = InterprocessCommunicationRouter(
             mapOf(
@@ -38,7 +40,7 @@ class WeatherPluginService : InterprocessCommunicationService() {
                 },
                 "/tiles/nws-radar" to { _, request ->
                     val parsedPayload = request.payload?.fromJson<MapTileLayerRequest>()
-                    parsedPayload?.let { success(NwsRadarTileClient.getTile(it)) } ?: badRequest()
+                    parsedPayload?.let { success(nwsRadarTileClient.getTile(it)) } ?: badRequest()
                 }
             )
         )
