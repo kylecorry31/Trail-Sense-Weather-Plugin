@@ -58,7 +58,7 @@ private object Layers {
             endpoint = "/tiles/nws-radar",
             name = "NWS Weather Radar",
             wmsLayer = "base_reflectivity_mosaic",
-            description = "Current US base reflectivity radar mosaic.",
+            description = "Latest US base reflectivity radar mosaic.",
             cacheDir = "nws-radar",
             refreshInterval = 240_000L,
             baseUrl = "https://nowcoast.noaa.gov/geoserver/observations/weather_radar/ows"
@@ -67,7 +67,7 @@ private object Layers {
             endpoint = "/tiles/lightning-density",
             name = "NWS Lightning Strike Density",
             wmsLayer = "lightning_detection:ldn_lightning_strike_density",
-            description = "Current US lightning strike density.",
+            description = "Latest US lightning strike density.",
             cacheDir = "lightning-density",
             refreshInterval = 900_000L
         ),
@@ -75,7 +75,7 @@ private object Layers {
             endpoint = "/tiles/precipitation-amount",
             name = "NWS Precipitation Amounts",
             wmsLayer = "ndfd_precipitation:6hr_precipitation_amount",
-            description = "Current US 6-hour precipitation amount forecast.",
+            description = "Latest US 6-hour precipitation amount forecast.",
             cacheDir = "precipitation-amount",
             refreshInterval = 3_600_000L
         ),
@@ -83,7 +83,7 @@ private object Layers {
             endpoint = "/tiles/tropical-cyclones",
             name = "NWS Tropical Cyclones",
             wmsLayer = "tropical_cyclones:active_tropical_cyclones",
-            description = "Current US tropical cyclone forecast.",
+            description = "Latest US tropical cyclone forecast.",
             cacheDir = "tropical-cyclones",
             refreshInterval = 900_000L
         )
