@@ -1,6 +1,7 @@
 package com.kylecorry.trail_sense.plugin.weather.service
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import com.kylecorry.andromeda.files.CacheFileSystem
 import com.kylecorry.andromeda.net.HttpClient
 import com.kylecorry.trail_sense.plugin.weather.models.MapTileLayerRequest
@@ -24,16 +25,19 @@ class NationalWeatherServiceWMSClient(context: Context) {
         val cache = getCache(layer)
         val key = getCacheKey(layer, request)
         val url = buildUrl(layer, request)
-        val bytes = cache.getOrPut(key) {
-            fetch(url) ?: ByteArray(0)
+        val cached = cache.get(key)
+        if (cached != null) {
+            return cached.takeUnless { it.isEmpty() }
         }
 
-        return if (bytes.isEmpty()) {
-            cache.invalidate(key)
-            null
+        val bytes = fetch(url) ?: return null
+        val payload = if (bytes.isCompletelyTransparentImage()) {
+            ByteArray(0)
         } else {
             bytes
         }
+        cache.put(key, payload)
+        return payload.takeUnless { it.isEmpty() }
     }
 
     private suspend fun getCache(layer: WebMapServiceLayer): DiskLRUCache<String, ByteArray> {
@@ -105,6 +109,26 @@ class NationalWeatherServiceWMSClient(context: Context) {
 
     private fun String.encode(): String {
         return URLEncoder.encode(this, StandardCharsets.UTF_8.name())
+    }
+
+    private fun ByteArray.isCompletelyTransparentImage(): Boolean {
+        val bitmap = BitmapFactory.decodeByteArray(this, 0, size) ?: return false
+        try {
+            if (!bitmap.hasAlpha()) {
+                return false
+            }
+
+            val pixels = IntArray(bitmap.width)
+            for (y in 0 until bitmap.height) {
+                bitmap.getPixels(pixels, 0, bitmap.width, 0, y, bitmap.width, 1)
+                if (pixels.any { it != 0 }) {
+                    return false
+                }
+            }
+            return true
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     private fun getCacheKey(layer: WebMapServiceLayer, request: MapTileLayerRequest): String {
