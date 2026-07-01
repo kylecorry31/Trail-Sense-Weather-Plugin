@@ -11,37 +11,81 @@ import com.kylecorry.trail_sense.plugin.weather.models.RegistrationResponse
 
 class WeatherPluginService : InterprocessCommunicationService() {
 
-    private val nwsRadarTileClient by lazy { NwsRadarTileClient(this) }
+    private val nwsTileClient by lazy { NationalWeatherServiceWMSClient(this) }
 
     override val router: InterprocessCommunicationRouter
         get() = InterprocessCommunicationRouter(
-            mapOf(
-                "/registration" to { _, _ ->
+            buildMap {
+                put("/registration") { _, _ ->
                     success(
                         RegistrationResponse(
                             RegistrationFeaturesResponse(
-                                mapLayers = listOf(
-                                    RegistrationMapLayerResponse(
-                                        endpoint = "/tiles/nws-radar",
-                                        name = "NWS Weather Radar",
-                                        layerType = "tile",
-                                        attribution = RegistrationMapLayerAttributionResponse(
-                                            attribution = "NOAA nowCOAST",
-                                            longAttribution = "Weather radar base reflectivity mosaics from NOAA nowCOAST."
-                                        ),
-                                        description = "Latest NOAA/NWS base reflectivity radar mosaic.",
-                                        minZoomLevel = 0,
-                                        refreshInterval = 240000
-                                    )
-                                )
+                                mapLayers = Layers.tiles.map { it.toRegistrationResponse() }
                             )
                         )
                     )
-                },
-                "/tiles/nws-radar" to { _, request ->
-                    val parsedPayload = request.payload?.fromJson<MapTileLayerRequest>()
-                    parsedPayload?.let { success(nwsRadarTileClient.getTile(it)) } ?: badRequest()
                 }
-            )
+
+                Layers.tiles.forEach { layer ->
+                    put(layer.endpoint) { _, request ->
+                        val parsedPayload = request.payload?.fromJson<MapTileLayerRequest>()
+                        parsedPayload?.let { success(nwsTileClient.getTile(layer, it)) }
+                            ?: badRequest()
+                    }
+                }
+            }
         )
+
+    private fun WebMapServiceLayer.toRegistrationResponse(): RegistrationMapLayerResponse {
+        return RegistrationMapLayerResponse(
+            endpoint = endpoint,
+            name = name,
+            layerType = "tile",
+            attribution = RegistrationMapLayerAttributionResponse(
+                attribution = "NOAA nowCOAST"
+            ),
+            description = description,
+            minZoomLevel = 0,
+            isTimeDependent = isTimeDependent,
+            refreshInterval = refreshInterval
+        )
+    }
+}
+
+private object Layers {
+    val tiles = listOf(
+        WebMapServiceLayer(
+            endpoint = "/tiles/nws-radar",
+            name = "NWS Weather Radar",
+            wmsLayer = "base_reflectivity_mosaic",
+            description = "Current US base reflectivity radar mosaic.",
+            cacheDir = "nws-radar",
+            refreshInterval = 240_000L,
+            baseUrl = "https://nowcoast.noaa.gov/geoserver/observations/weather_radar/ows"
+        ),
+        WebMapServiceLayer(
+            endpoint = "/tiles/lightning-density",
+            name = "NWS Lightning Strike Density",
+            wmsLayer = "lightning_detection:ldn_lightning_strike_density",
+            description = "Current US lightning strike density.",
+            cacheDir = "lightning-density",
+            refreshInterval = 900_000L
+        ),
+        WebMapServiceLayer(
+            endpoint = "/tiles/precipitation-amount",
+            name = "NWS Precipitation Amounts",
+            wmsLayer = "ndfd_precipitation:6hr_precipitation_amount",
+            description = "Current US 6-hour precipitation amount forecast.",
+            cacheDir = "precipitation-amount",
+            refreshInterval = 3_600_000L
+        ),
+        WebMapServiceLayer(
+            endpoint = "/tiles/tropical-cyclones",
+            name = "NWS Tropical Cyclones",
+            wmsLayer = "tropical_cyclones:active_tropical_cyclones",
+            description = "Current US tropical cyclone forecast.",
+            cacheDir = "tropical-cyclones",
+            refreshInterval = 900_000L
+        )
+    )
 }

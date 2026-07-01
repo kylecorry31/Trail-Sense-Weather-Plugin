@@ -5,27 +5,25 @@ import com.kylecorry.andromeda.files.CacheFileSystem
 import com.kylecorry.andromeda.net.HttpClient
 import com.kylecorry.trail_sense.plugin.weather.models.MapTileLayerRequest
 import com.kylecorry.trail_sense.plugin.weather.models.getTile
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.time.Instant
+import java.time.format.DateTimeFormatter
 
-class NwsRadarTileClient(context: Context) {
+class NationalWeatherServiceWMSClient(context: Context) {
 
     private val client = HttpClient()
-    private val cache = DiskLRUCache<String, ByteArray>(
-        baseFolderPath = CacheFileSystem(context.applicationContext)
-            .getDirectory(CACHE_DIR)
-            .path,
-        size = MAX_CACHE_SIZE,
-        duration = Duration.ofMillis(CACHE_DURATION_MILLIS),
-        getFilename = { "$it.png" },
-        serialize = { it },
-        deserialize = { it }
-    )
+    private val cacheFileSystem = CacheFileSystem(context.applicationContext)
+    private val caches = mutableMapOf<WebMapServiceLayer, DiskLRUCache<String, ByteArray>>()
+    private val cacheMutex = Mutex()
 
-    suspend fun getTile(request: MapTileLayerRequest): ByteArray? {
-        val key = getCacheKey(request)
-        val url = buildUrl(request)
+    suspend fun getTile(layer: WebMapServiceLayer, request: MapTileLayerRequest): ByteArray? {
+        val cache = getCache(layer)
+        val key = getCacheKey(layer, request)
+        val url = buildUrl(layer, request)
         val bytes = cache.getOrPut(key) {
             fetch(url) ?: ByteArray(0)
         }
@@ -38,13 +36,30 @@ class NwsRadarTileClient(context: Context) {
         }
     }
 
-    private fun buildUrl(request: MapTileLayerRequest): String {
+    private suspend fun getCache(layer: WebMapServiceLayer): DiskLRUCache<String, ByteArray> {
+        return cacheMutex.withLock {
+            caches.getOrPut(layer) {
+                DiskLRUCache(
+                    baseFolderPath = cacheFileSystem
+                        .getDirectory(layer.cacheDir)
+                        .path,
+                    size = MAX_CACHE_SIZE,
+                    duration = Duration.ofMillis(layer.refreshInterval),
+                    getFilename = { "$it.png" },
+                    serialize = { it },
+                    deserialize = { it }
+                )
+            }
+        }
+    }
+
+    private fun buildUrl(layer: WebMapServiceLayer, request: MapTileLayerRequest): String {
         val bounds = request.getTile().getBounds()
-        val params = mapOf(
+        val params = mutableMapOf(
             "service" to "WMS",
             "version" to "1.1.1",
             "request" to "GetMap",
-            "layers" to LAYER,
+            "layers" to layer.wmsLayer,
             "styles" to "",
             "format" to "image/png",
             "transparent" to "true",
@@ -54,7 +69,12 @@ class NwsRadarTileClient(context: Context) {
             "bbox" to "${bounds.west},${bounds.south},${bounds.east},${bounds.north}"
         )
 
-        return BASE_URL + "?" + params.entries.joinToString("&") { (key, value) ->
+        if (layer.isTimeDependent) {
+            params["time"] =
+                DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(request.time))
+        }
+
+        return layer.baseUrl + "?" + params.entries.joinToString("&") { (key, value) ->
             "${key.encode()}=${value.encode()}"
         }
     }
@@ -87,17 +107,16 @@ class NwsRadarTileClient(context: Context) {
         return URLEncoder.encode(this, StandardCharsets.UTF_8.name())
     }
 
-    private fun getCacheKey(request: MapTileLayerRequest): String {
-        return "${request.z}/${request.x}/${request.y}"
+    private fun getCacheKey(layer: WebMapServiceLayer, request: MapTileLayerRequest): String {
+        return if (layer.isTimeDependent) {
+            "${request.z}/${request.x}/${request.y}/${request.time}"
+        } else {
+            "${request.z}/${request.x}/${request.y}"
+        }
     }
 
     private companion object {
         const val TILE_SIZE = 256
-        const val CACHE_DURATION_MILLIS = 240_000L
         const val MAX_CACHE_SIZE = 512
-        const val CACHE_DIR = "nws-radar"
-        const val BASE_URL =
-            "https://nowcoast.noaa.gov/geoserver/observations/weather_radar/ows"
-        const val LAYER = "base_reflectivity_mosaic"
     }
 }
