@@ -1,7 +1,6 @@
 package com.kylecorry.trail_sense.plugin.weather.service
 
 import com.kylecorry.andromeda.net.HttpClient
-import com.kylecorry.sol.science.geography.projections.MercatorProjection
 import com.kylecorry.trail_sense.plugin.weather.models.MapTileLayerRequest
 import com.kylecorry.trail_sense.plugin.weather.models.getTile
 import java.net.URLEncoder
@@ -12,13 +11,11 @@ object NwsRadarTileClient {
     private const val TILE_SIZE = 256
     private const val CACHE_DURATION_MILLIS = 240_000L
     private const val MAX_CACHE_SIZE = 512
-    private const val WEB_MERCATOR_RADIUS_METERS = 6_378_137f
     private const val BASE_URL =
         "https://nowcoast.noaa.gov/geoserver/observations/weather_radar/ows"
     private const val LAYER = "base_reflectivity_mosaic"
 
     private val client = HttpClient()
-    private val projection = MercatorProjection(WEB_MERCATOR_RADIUS_METERS)
     private val cacheLock = Any()
     private val cache = object : LinkedHashMap<String, CachedTile>(MAX_CACHE_SIZE, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedTile>?): Boolean {
@@ -42,19 +39,19 @@ object NwsRadarTileClient {
     }
 
     private fun buildUrl(request: MapTileLayerRequest): String {
-        val bounds = request.getTile().getBounds().toWebMercator()
+        val bounds = request.getTile().getBounds()
         val params = mapOf(
             "service" to "WMS",
-            "version" to "1.3.0",
+            "version" to "1.1.1",
             "request" to "GetMap",
             "layers" to LAYER,
             "styles" to "",
             "format" to "image/png",
             "transparent" to "true",
-            "crs" to "EPSG:3857",
+            "srs" to "EPSG:4326",
             "width" to TILE_SIZE.toString(),
             "height" to TILE_SIZE.toString(),
-            "bbox" to "${bounds.minX},${bounds.minY},${bounds.maxX},${bounds.maxY}"
+            "bbox" to "${bounds.west},${bounds.south},${bounds.east},${bounds.north}"
         )
 
         return BASE_URL + "?" + params.entries.joinToString("&") { (key, value) ->
@@ -94,26 +91,8 @@ object NwsRadarTileClient {
         return URLEncoder.encode(this, StandardCharsets.UTF_8.name())
     }
 
-    private fun com.kylecorry.trail_sense.plugin.weather.models.TileBounds.toWebMercator(): WebMercatorBounds {
-        val southwest = projection.toPixels(south, west)
-        val northeast = projection.toPixels(north, east)
-        return WebMercatorBounds(
-            minX = southwest.x.toDouble(),
-            minY = southwest.y.toDouble(),
-            maxX = northeast.x.toDouble(),
-            maxY = northeast.y.toDouble()
-        )
-    }
-
     private data class CachedTile(
         val bytes: ByteArray,
         val expiresAt: Long
-    )
-
-    private data class WebMercatorBounds(
-        val minX: Double,
-        val minY: Double,
-        val maxX: Double,
-        val maxY: Double
     )
 }
