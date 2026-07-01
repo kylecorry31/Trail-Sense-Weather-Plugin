@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name" translatable="false">Trail Sense Weather Plugin</string>
+    <string name="instructions">NWS radar map layer is ready to use in Trail Sense.</string>
+</resources>
