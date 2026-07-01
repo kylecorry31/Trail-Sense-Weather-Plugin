@@ -1,13 +1,11 @@
 package com.kylecorry.trail_sense.plugin.weather.service
 
+import com.kylecorry.andromeda.net.HttpClient
 import com.kylecorry.trail_sense.plugin.weather.models.MapTileLayerRequest
 import com.kylecorry.trail_sense.plugin.weather.models.getTile
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.time.Duration
 import kotlin.math.PI
 import kotlin.math.ln
 import kotlin.math.tan
@@ -20,6 +18,7 @@ object NwsRadarTileClient {
         "https://nowcoast.noaa.gov/geoserver/observations/weather_radar/ows"
     private const val LAYER = "base_reflectivity_mosaic"
 
+    private val client = HttpClient()
     private val cacheLock = Any()
     private val cache = object : LinkedHashMap<String, CachedTile>(MAX_CACHE_SIZE, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedTile>?): Boolean {
@@ -63,30 +62,32 @@ object NwsRadarTileClient {
         }
     }
 
-    private suspend fun fetch(url: String): ByteArray? = withContext(Dispatchers.IO) {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "Trail Sense Weather Plugin")
-        }
-
-        try {
-            if (connection.responseCode !in 200..299) {
-                return@withContext null
-            }
-
-            val contentType = connection.contentType.orEmpty()
-            if (!contentType.startsWith("image/")) {
-                return@withContext null
-            }
-
-            connection.inputStream.use { it.readBytes() }
+    private suspend fun fetch(url: String): ByteArray? {
+        val response = try {
+            client.send(
+                url,
+                headers = mapOf("User-Agent" to "Trail Sense Weather Plugin"),
+                readTimeout = Duration.ofSeconds(10),
+                connectTimeout = Duration.ofSeconds(10)
+            )
         } catch (_: Exception) {
-            null
-        } finally {
-            connection.disconnect()
+            return null
         }
+
+        if (!response.isSuccessful()) {
+            return null
+        }
+
+        val contentType = response.headers.firstValue("Content-Type").orEmpty()
+        if (!contentType.startsWith("image/")) {
+            return null
+        }
+
+        return response.content
+    }
+
+    private fun Map<String, List<String>>.firstValue(key: String): String? {
+        return entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value?.firstOrNull()
     }
 
     private fun String.encode(): String {

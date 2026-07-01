@@ -26,6 +26,7 @@ andromeda-json = { module = "com.kylecorry.andromeda:json", version.ref = "andro
 andromeda-fragments = { module = "com.kylecorry.andromeda:fragments", version.ref = "andromedaVersion" }
 andromeda-permissions = { module = "com.kylecorry.andromeda:permissions", version.ref = "andromedaVersion" }
 andromeda-ipc = { module = "com.kylecorry.andromeda:ipc", version.ref = "andromedaVersion" }
+andromeda-net = { module = "com.kylecorry.andromeda:net", version.ref = "andromedaVersion" }
 desugar_jdk_libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar_jdk_libs" }
 junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit5Version" }
 junit-jupiter-params = { module = "org.junit.jupiter:junit-jupiter-params", version.ref = "junit5Version" }
